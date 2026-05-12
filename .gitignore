@@ -1,0 +1,164 @@
+# ════════════════════════════════════════════════════════════════════
+#  ProFeCo — .gitignore raíz
+#  Cubre: Quarkus/Maven (7 microservicios), Next.js (frontend),
+#         NetBeans, IntelliJ, VSCode, H2, Docker volumes, SO
+# ════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────────
+# Java / Maven / Quarkus
+# ─────────────────────────────────────────────
+**/target/
+**/*.class
+**/*.jar
+**/*.war
+**/*.ear
+**/*.nar
+**/hs_err_pid*
+**/replay_pid*
+**/dependency-reduced-pom.xml
+**/.mvn/timing.properties
+**/.mvn/wrapper/maven-wrapper.jar
+
+# Quarkus dev mode / build cache
+**/.quarkus/
+**/build/
+
+# ─────────────────────────────────────────────
+# H2 — bases de datos locales de cada microservicio
+# ─────────────────────────────────────────────
+**/data/
+**/*.mv.db
+**/*.trace.db
+**/*.lock.db
+
+# ─────────────────────────────────────────────
+# Node.js / Next.js (profeco-frontend)
+# ─────────────────────────────────────────────
+**/node_modules/
+**/.next/
+**/out/
+**/.turbo/
+**/.swc/
+**/coverage/
+**/.nyc_output/
+**/*.tsbuildinfo
+**/next-env.d.ts.bak
+
+# Logs npm/yarn/pnpm
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/pnpm-debug.log*
+**/lerna-debug.log*
+
+# ─────────────────────────────────────────────
+# Variables de entorno (NO commitear secretos)
+# ─────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+# Mantén plantilla pública si la creas:
+!**/.env.example
+
+# ─────────────────────────────────────────────
+# NetBeans
+# ─────────────────────────────────────────────
+**/nbproject/private/
+**/nbbuild/
+**/nbdist/
+**/.nb-gradle/
+**/build.xml.data.CRC32
+**/build.xml.script.CRC32
+**/build.xml.stylesheet.CRC32
+
+# nb-configuration.xml a veces lleva rutas locales; ignóralo por seguridad
+**/nb-configuration.xml
+
+# ─────────────────────────────────────────────
+# IntelliJ IDEA / Android Studio
+# ─────────────────────────────────────────────
+**/.idea/
+**/*.iml
+**/*.ipr
+**/*.iws
+
+# ─────────────────────────────────────────────
+# VSCode
+# ─────────────────────────────────────────────
+**/.vscode/
+!**/.vscode/extensions.json
+!**/.vscode/settings.json.example
+
+# ─────────────────────────────────────────────
+# Eclipse
+# ─────────────────────────────────────────────
+**/.classpath
+**/.project
+**/.settings/
+**/.factorypath
+**/.apt_generated/
+
+# ─────────────────────────────────────────────
+# Docker
+# ─────────────────────────────────────────────
+# Los Dockerfile y docker-compose.yml SÍ se commitean.
+# Ignora overrides locales:
+docker-compose.override.yml
+docker-compose.*.local.yml
+
+# ─────────────────────────────────────────────
+# Logs / temporales
+# ─────────────────────────────────────────────
+**/*.log
+**/logs/
+**/tmp/
+**/temp/
+**/*.pid
+**/*.seed
+**/*.pid.lock
+
+# ─────────────────────────────────────────────
+# Claves y certificados (NO commitear)
+# ─────────────────────────────────────────────
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+# Excepción: las claves de prueba del repo (si las marcas explícitamente)
+!**/src/main/resources/publicKey.pem
+!**/src/main/resources/privateKey.pem
+
+# ─────────────────────────────────────────────
+# Sistema operativo
+# ─────────────────────────────────────────────
+# macOS
+.DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ─────────────────────────────────────────────
+# Editores varios
+# ─────────────────────────────────────────────
+*.swp
+*.swo
+*.bak
+*.orig
+.history/

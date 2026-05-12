@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 36 40% 98%;
+    --foreground: 0 25% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 25% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 25% 12%;
+    --primary: 0 67% 32%;
+    --primary-foreground: 36 40% 98%;
+    --secondary: 39 60% 56%;
+    --secondary-foreground: 0 60% 22%;
+    --muted: 36 24% 95%;
+    --muted-foreground: 25 10% 42%;
+    --accent: 36 32% 92%;
+    --accent-foreground: 0 60% 22%;
+    --destructive: 0 84% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 30 20% 87%;
+    --input: 30 20% 87%;
+    --ring: 0 67% 32%;
+    --radius: 0.6rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}

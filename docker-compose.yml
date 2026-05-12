@@ -1,0 +1,169 @@
+# Orquestación de ProFeCo
+#
+# Levanta RabbitMQ y los 7 microservicios Quarkus.
+# El frontend Next.js se queda corriendo en el host (npm run dev en :3000)
+# y se conecta a:
+#   - http://localhost:8080  → api-gateway (mapeado al host)
+#   - ws://localhost:8085    → ms-notificaciones (mapeado al host)
+#
+# Internamente cada microservicio se comunica con los demás usando sus
+# nombres de servicio Docker (ms-usuarios, ms-tiendas, etc.) en la red
+# 'profeco-net'.
+#
+# Requisitos:
+#   - Docker Desktop corriendo
+#   - Antes del primer `docker compose up`, los servicios deben haber sido
+#     compilados con `mvn package` (target/quarkus-app/ debe existir).
+#     Ya está hecho en este repo.
+#
+# Comandos útiles:
+#   docker compose up -d --build      # construir y arrancar todo
+#   docker compose logs -f api-gateway
+#   docker compose ps                 # ver estado
+#   docker compose down               # detener todo
+#   docker compose down -v            # detener y borrar volúmenes (resetea H2)
+
+services:
+  # ───────────────────────── RabbitMQ ─────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: profeco-rabbitmq
+    ports:
+      - "5672:5672"    # broker AMQP
+      - "15672:15672"  # consola web → http://localhost:15672 (guest/guest)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [profeco-net]
+
+  # ───────────────────────── ms-usuarios :8083 ─────────────────────────
+  ms-usuarios:
+    build: ./ms-usuarios
+    container_name: profeco-ms-usuarios
+    ports:
+      - "8083:8083"
+    environment:
+      QUARKUS_HTTP_PORT: 8083
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:h2:file:/deployments/data/usuariosdb;AUTO_SERVER=TRUE
+      # Cambia drop-and-create a update si quieres que persistan los usuarios
+      # QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION: update
+    volumes:
+      - usuarios-data:/deployments/data
+    networks: [profeco-net]
+
+  # ───────────────────────── ms-tiendas :8082 ─────────────────────────
+  ms-tiendas:
+    build: ./ms-tiendas
+    container_name: profeco-ms-tiendas
+    ports:
+      - "8082:8082"
+    environment:
+      QUARKUS_HTTP_PORT: 8082
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:h2:file:/deployments/data/tiendasdb;AUTO_SERVER=TRUE
+    volumes:
+      - tiendas-data:/deployments/data
+    networks: [profeco-net]
+
+  # ───────────────────────── ms-productos :8081 ─────────────────────────
+  ms-productos:
+    build: ./ms-productos
+    container_name: profeco-ms-productos
+    ports:
+      - "8081:8081"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      QUARKUS_HTTP_PORT: 8081
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:h2:file:/deployments/data/productosdb;AUTO_SERVER=TRUE
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+    volumes:
+      - productos-data:/deployments/data
+    networks: [profeco-net]
+
+  # ───────────────────────── ms-reportes :8084 ─────────────────────────
+  ms-reportes:
+    build: ./ms-reportes
+    container_name: profeco-ms-reportes
+    ports:
+      - "8084:8084"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      QUARKUS_HTTP_PORT: 8084
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:h2:file:/deployments/data/reportesdb;AUTO_SERVER=TRUE
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+    volumes:
+      - reportes-data:/deployments/data
+    networks: [profeco-net]
+
+  # ───────────────────────── ms-notificaciones :8085 ─────────────────────────
+  ms-notificaciones:
+    build: ./ms-notificaciones
+    container_name: profeco-ms-notificaciones
+    ports:
+      - "8085:8085"   # expuesto al host porque el frontend abre WebSocket directo
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      QUARKUS_HTTP_PORT: 8085
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+    networks: [profeco-net]
+
+  # ───────────────────────── ms-busqueda :8086 ─────────────────────────
+  ms-busqueda:
+    build: ./ms-busqueda
+    container_name: profeco-ms-busqueda
+    ports:
+      - "8086:8086"
+    depends_on:
+      - ms-productos
+      - ms-tiendas
+    environment:
+      QUARKUS_HTTP_PORT: 8086
+      # Override de los REST clients para usar nombres de servicio docker
+      QUARKUS_REST_CLIENT_PRODUCTOS_INTERNO_URL: http://ms-productos:8081
+      QUARKUS_REST_CLIENT_TIENDAS_INTERNO_URL: http://ms-tiendas:8082
+    networks: [profeco-net]
+
+  # ───────────────────────── api-gateway :8080 ─────────────────────────
+  api-gateway:
+    build: ./api-gateway
+    container_name: profeco-api-gateway
+    ports:
+      - "8080:8080"   # único endpoint público que consume el frontend
+    depends_on:
+      - ms-productos
+      - ms-tiendas
+      - ms-usuarios
+      - ms-reportes
+    environment:
+      QUARKUS_HTTP_PORT: 8080
+      QUARKUS_REST_CLIENT_PRODUCTOS_API_URL: http://ms-productos:8081
+      QUARKUS_REST_CLIENT_TIENDAS_API_URL: http://ms-tiendas:8082
+      QUARKUS_REST_CLIENT_USUARIOS_API_URL: http://ms-usuarios:8083
+      QUARKUS_REST_CLIENT_REPORTES_API_URL: http://ms-reportes:8084
+    networks: [profeco-net]
+
+networks:
+  profeco-net:
+    driver: bridge
+
+volumes:
+  usuarios-data:
+  tiendas-data:
+  productos-data:
+  reportes-data:

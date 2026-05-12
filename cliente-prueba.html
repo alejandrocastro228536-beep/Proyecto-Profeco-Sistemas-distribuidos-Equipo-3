@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>ProFeCo - Cliente de Prueba</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      color: #333;
+    }
+
+    header {
+      background: #1a3a5c;
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 { font-size: 1.3rem; }
+    header span { font-size: 0.85rem; opacity: 0.7; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 16px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+
+    .card h2 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #f0f2f5;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #ccc;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .dot.verde  { background: #22c55e; }
+    .dot.rojo   { background: #ef4444; }
+    .dot.naranja{ background: #f97316; }
+
+    .log {
+      background: #0f172a;
+      color: #94f3a3;
+      font-family: monospace;
+      font-size: 0.78rem;
+      padding: 12px;
+      border-radius: 6px;
+      height: 180px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+    }
+
+    .log p { margin-bottom: 4px; }
+    .log .ts { color: #64748b; }
+    .log .err { color: #f87171; }
+    .log .info { color: #60a5fa; }
+
+    button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: default; }
+
+    .btn-verde    { background: #22c55e; color: white; }
+    .btn-rojo     { background: #ef4444; color: white; }
+    .btn-azul     { background: #3b82f6; color: white; }
+    .btn-naranja  { background: #f97316; color: white; }
+    .btn-gris     { background: #6b7280; color: white; }
+
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+      font-family: inherit;
+    }
+
+    textarea { resize: vertical; min-height: 80px; font-family: monospace; font-size: 0.78rem; }
+
+    label { font-size: 0.8rem; color: #555; display: block; margin-bottom: 3px; }
+
+    .tag {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .tag-get    { background: #dcfce7; color: #166534; }
+    .tag-post   { background: #fef3c7; color: #92400e; }
+    .tag-delete { background: #fee2e2; color: #991b1b; }
+
+    #token-display {
+      font-size: 0.7rem;
+      font-family: monospace;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 6px 8px;
+      word-break: break-all;
+      color: #0369a1;
+      margin-top: 6px;
+      min-height: 32px;
+    }
+
+    .full { grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>ProFeCo — Cliente de Prueba</h1>
+    <span>Microservicios Quarkus · REST + WebSocket + RabbitMQ</span>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- ============================================================
+       PANEL 1: WEBSOCKET OFERTAS
+  ============================================================ -->
+  <div class="card">
+    <h2><span class="dot" id="dot-ofertas"></span> WebSocket — Ofertas en tiempo real</h2>
+    <div class="log" id="log-ofertas"><p class="ts">Esperando conexion...</p></div>
+    <div class="row">
+      <button class="btn-verde" onclick="conectarWS('ofertas')">Conectar</button>
+      <button class="btn-rojo"  onclick="desconectarWS('ofertas')">Desconectar</button>
+      <button class="btn-gris"  onclick="limpiarLog('log-ofertas')">Limpiar</button>
+    </div>
+    <p style="font-size:0.75rem;color:#888;">
+      ws://localhost:8085/ws/notificaciones/ofertas<br>
+      Cuando la tienda publique una oferta, aparecera aqui automaticamente.
+    </p>
+  </div>
+
+  <!-- ============================================================
+       PANEL 2: WEBSOCKET INCONSISTENCIAS
+  ============================================================ -->
+  <div class="card">
+    <h2><span class="dot" id="dot-inconsistencias"></span> WebSocket — Alertas ProFeCo</h2>
+    <div class="log" id="log-inconsistencias"><p class="ts">Esperando conexion...</p></div>
+    <div class="row">
+      <button class="btn-verde"  onclick="conectarWS('inconsistencias')">Conectar</button>
+      <button class="btn-rojo"   onclick="desconectarWS('inconsistencias')">Desconectar</button>
+      <button class="btn-gris"   onclick="limpiarLog('log-inconsistencias')">Limpiar</button>
+    </div>
+    <p style="font-size:0.75rem;color:#888;">
+      ws://localhost:8085/ws/notificaciones/inconsistencias<br>
+      ProFeCo recibe alerta cuando una tienda acumula 3 reportes.
+    </p>
+  </div>
+
+  <!-- ============================================================
+       PANEL 3: AUTENTICACION
+  ============================================================ -->
+  <div class="card">
+    <h2>🔑 Autenticacion (ms-usuarios → Gateway)</h2>
+
+    <label>Email</label>
+    <input id="auth-email" type="email" value="juan@email.com" placeholder="email">
+
+    <label>Contrasena</label>
+    <input id="auth-pass" type="password" value="123456" placeholder="contrasena">
+
+    <label>Rol (solo para registro)</label>
+    <select id="auth-rol">
+      <option value="CONSUMIDOR">CONSUMIDOR</option>
+      <option value="TIENDA">TIENDA</option>
+      <option value="ADMIN">ADMIN (ProFeCo)</option>
+    </select>
+
+    <div class="row">
+      <button class="btn-azul"   onclick="registro()"><span class="tag tag-post">POST</span> Registrar</button>
+      <button class="btn-verde"  onclick="login()"><span class="tag tag-post">POST</span> Login</button>
+    </div>
+
+    <label>Token JWT guardado:</label>
+    <div id="token-display">— sin token —</div>
+
+    <div class="log" style="height:100px;margin-top:10px;" id="log-auth">
+      <p class="ts">Resultados de autenticacion...</p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PANEL 4: PRODUCTOS
+  ============================================================ -->
+  <div class="card">
+    <h2>📦 Productos (ms-productos)</h2>
+
+    <div class="row">
+      <button class="btn-azul" onclick="get('http://localhost:8081/productos', 'log-productos')">
+        <span class="tag tag-get">GET</span> Listar todos
+      </button>
+      <button class="btn-azul" onclick="getPreciosProducto()">
+        <span class="tag tag-get">GET</span> Precios del producto
+      </button>
+    </div>
+
+    <label>ID producto para ver precios</label>
+    <input id="producto-id" type="number" value="1" style="width:80px;">
+
+    <label>JSON nuevo producto</label>
+    <textarea id="producto-body">{
+  "nombre": "Frijol negro 1kg",
+  "categoria": "Basicos",
+  "descripcion": "Frijol negro seco"
+}</textarea>
+
+    <div class="row">
+      <button class="btn-naranja" onclick="post('http://localhost:8081/productos', 'producto-body', 'log-productos')">
+        <span class="tag tag-post">POST</span> Crear producto
+      </button>
+    </div>
+
+    <div class="log" style="height:120px;" id="log-productos">
+      <p class="ts">Respuestas de ms-productos...</p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PANEL 5: PUBLICAR OFERTA (dispara RabbitMQ → WebSocket)
+  ============================================================ -->
+  <div class="card">
+    <h2>🏷️ Publicar Oferta (RabbitMQ + WebSocket)</h2>
+    <p style="font-size:0.75rem;color:#888;margin-bottom:10px;">
+      Este POST llega a ms-productos, que publica en RabbitMQ.
+      ms-notificaciones consume y envia por WebSocket. Conecta el panel de Ofertas primero.
+    </p>
+
+    <textarea id="oferta-body" style="min-height:140px;">{
+  "productoId": 1,
+  "nombreProducto": "Leche entera 1L",
+  "tiendaId": 1,
+  "nombreTienda": "Chedraui Obregon",
+  "precioOriginal": 28.50,
+  "precioOferta": 22.00,
+  "descripcion": "Oferta fin de semana",
+  "fechaExpiracion": "2026-04-30"
+}</textarea>
+
+    <button class="btn-naranja" onclick="post('http://localhost:8081/productos/ofertas', 'oferta-body', 'log-oferta')">
+      <span class="tag tag-post">POST</span> Publicar oferta → disparar notificacion
+    </button>
+
+    <div class="log" style="height:90px;margin-top:10px;" id="log-oferta">
+      <p class="ts">Respuesta de ms-productos...</p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PANEL 6: REPORTES DE INCONSISTENCIAS
+  ============================================================ -->
+  <div class="card">
+    <h2>⚠️ Reportar Inconsistencia</h2>
+    <p style="font-size:0.75rem;color:#888;margin-bottom:10px;">
+      Ya hay 2 reportes de prueba para tiendaId=1. Al enviar este (el 3ro),
+      ms-reportes publicara una alerta en RabbitMQ y el panel de ProFeCo la recibira por WebSocket.
+    </p>
+
+    <textarea id="reporte-body" style="min-height:140px;">{
+  "usuarioId": 1,
+  "tiendaId": 1,
+  "nombreTienda": "Chedraui Obregon",
+  "productoId": 2,
+  "nombreProducto": "Huevo blanco 30pz",
+  "precioPublicado": 55.00,
+  "precioReal": 65.00,
+  "descripcion": "El precio en caja fue mayor al anunciado"
+}</textarea>
+
+    <button class="btn-rojo" onclick="post('http://localhost:8084/reportes', 'reporte-body', 'log-reporte')">
+      <span class="tag tag-post">POST</span> Enviar reporte → disparar alerta ProFeCo
+    </button>
+
+    <div class="log" style="height:80px;margin-top:10px;" id="log-reporte">
+      <p class="ts">Respuesta de ms-reportes...</p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PANEL 7: TIENDAS
+  ============================================================ -->
+  <div class="card">
+    <h2>🏪 Tiendas (ms-tiendas)</h2>
+
+    <div class="row">
+      <button class="btn-azul" onclick="get('http://localhost:8082/tiendas', 'log-tiendas')">
+        <span class="tag tag-get">GET</span> Listar todas
+      </button>
+      <button class="btn-azul" onclick="get('http://localhost:8082/tiendas/tipo/SUPERMERCADO', 'log-tiendas')">
+        <span class="tag tag-get">GET</span> Supermercados
+      </button>
+      <button class="btn-azul" onclick="get('http://localhost:8082/tiendas/tipo/TIANGUIS', 'log-tiendas')">
+        <span class="tag tag-get">GET</span> Tianguis
+      </button>
+    </div>
+
+    <div class="log" style="height:130px;" id="log-tiendas">
+      <p class="ts">Respuestas de ms-tiendas...</p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PANEL 8: ESTADO DE SERVICIOS
+  ============================================================ -->
+  <div class="card">
+    <h2>🩺 Estado de los servicios</h2>
+    <div class="row" style="flex-wrap:wrap;">
+      <button class="btn-gris" onclick="ping('http://localhost:8081/productos', 'log-ping', 'ms-productos :8081')">Ping productos</button>
+      <button class="btn-gris" onclick="ping('http://localhost:8082/tiendas', 'log-ping', 'ms-tiendas :8082')">Ping tiendas</button>
+      <button class="btn-gris" onclick="ping('http://localhost:8084/reportes', 'log-ping', 'ms-reportes :8084')">Ping reportes</button>
+      <button class="btn-gris" onclick="ping('http://localhost:8085/health', 'log-ping', 'ms-notificaciones :8085')">Ping notificaciones</button>
+      <button class="btn-gris" onclick="ping('http://localhost:8080/api/status', 'log-ping', 'api-gateway :8080')">Ping gateway</button>
+    </div>
+    <div class="log" style="height:140px;" id="log-ping">
+      <p class="ts">Haz clic en un servicio para verificar si responde...</p>
+    </div>
+  </div>
+
+</div><!-- /grid -->
+
+<script>
+// -------------------------------------------------------
+// Mapa de conexiones WebSocket activas
+// -------------------------------------------------------
+const sockets = {};
+
+function ts() {
+  return '<span class="ts">[' + new Date().toLocaleTimeString() + ']</span> ';
+}
+
+function agregarLog(logId, texto, clase = '') {
+  const log = document.getElementById(logId);
+  const p = document.createElement('p');
+  p.innerHTML = ts() + '<span class="' + clase + '">' + texto + '</span>';
+  log.appendChild(p);
+  log.scrollTop = log.scrollHeight;
+}
+
+function limpiarLog(logId) {
+  document.getElementById(logId).innerHTML = '';
+}
+
+// -------------------------------------------------------
+// WebSocket
+// -------------------------------------------------------
+function conectarWS(tipo) {
+  if (sockets[tipo] && sockets[tipo].readyState === WebSocket.OPEN) {
+    agregarLog('log-' + tipo, 'Ya estas conectado.', 'info');
+    return;
+  }
+
+  const ws = new WebSocket('ws://localhost:8085/ws/notificaciones/' + tipo);
+
+  ws.onopen = () => {
+    sockets[tipo] = ws;
+    document.getElementById('dot-' + tipo).className = 'dot verde';
+    agregarLog('log-' + tipo, 'Conectado al canal "' + tipo + '"', 'info');
+  };
+
+  ws.onmessage = (e) => {
+    // Intentar formatear el JSON para que sea mas legible
+    let msg = e.data;
+    try {
+      msg = JSON.stringify(JSON.parse(e.data), null, 2)
+              .replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+    } catch(_) {}
+    agregarLog('log-' + tipo, '📨 ' + msg);
+  };
+
+  ws.onclose = () => {
+    document.getElementById('dot-' + tipo).className = 'dot rojo';
+    agregarLog('log-' + tipo, 'Conexion cerrada.', 'err');
+    delete sockets[tipo];
+  };
+
+  ws.onerror = () => {
+    agregarLog('log-' + tipo, 'Error de conexion. Verifica que ms-notificaciones este corriendo.', 'err');
+  };
+}
+
+function desconectarWS(tipo) {
+  if (sockets[tipo]) {
+    sockets[tipo].close();
+    delete sockets[tipo];
+  }
+}
+
+// -------------------------------------------------------
+// REST helpers
+// -------------------------------------------------------
+let tokenGuardado = '';
+
+async function get(url, logId) {
+  agregarLog(logId, 'GET ' + url, 'info');
+  try {
+    const headers = tokenGuardado ? { 'Authorization': 'Bearer ' + tokenGuardado } : {};
+    const r = await fetch(url, { headers });
+    const txt = await r.text();
+    let pretty = txt;
+    try { pretty = JSON.stringify(JSON.parse(txt), null, 2); } catch(_) {}
+    agregarLog(logId, r.status + ' → ' + pretty.substring(0, 400));
+  } catch(e) {
+    agregarLog(logId, 'Error: ' + e.message + ' — servicio apagado?', 'err');
+  }
+}
+
+async function post(url, bodyId, logId) {
+  const body = document.getElementById(bodyId).value;
+  agregarLog(logId, 'POST ' + url, 'info');
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (tokenGuardado) headers['Authorization'] = 'Bearer ' + tokenGuardado;
+    const r = await fetch(url, { method: 'POST', headers, body });
+    const txt = await r.text();
+    let pretty = txt;
+    try { pretty = JSON.stringify(JSON.parse(txt), null, 2); } catch(_) {}
+    agregarLog(logId, r.status + ' → ' + pretty.substring(0, 400));
+  } catch(e) {
+    agregarLog(logId, 'Error: ' + e.message + ' — servicio apagado?', 'err');
+  }
+}
+
+async function ping(url, logId, nombre) {
+  try {
+    const r = await fetch(url);
+    agregarLog(logId, nombre + ' → ' + r.status + ' OK ✔', 'info');
+  } catch(e) {
+    agregarLog(logId, nombre + ' → NO RESPONDE ✗', 'err');
+  }
+}
+
+// Autenticacion
+async function registro() {
+  const body = JSON.stringify({
+    email: document.getElementById('auth-email').value,
+    password: document.getElementById('auth-pass').value,
+    nombre: 'Usuario de prueba',
+    rol: document.getElementById('auth-rol').value
+  });
+  agregarLog('log-auth', 'POST /usuarios/registro', 'info');
+  try {
+    const r = await fetch('http://localhost:8083/usuarios/registro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+    const txt = await r.text();
+    agregarLog('log-auth', r.status + ' → ' + txt);
+  } catch(e) {
+    agregarLog('log-auth', 'Error: ' + e.message, 'err');
+  }
+}
+
+async function login() {
+  const body = JSON.stringify({
+    email: document.getElementById('auth-email').value,
+    password: document.getElementById('auth-pass').value
+  });
+  agregarLog('log-auth', 'POST /usuarios/login', 'info');
+  try {
+    const r = await fetch('http://localhost:8083/usuarios/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+    const data = await r.json();
+    if (data.token) {
+      tokenGuardado = data.token;
+      document.getElementById('token-display').textContent = tokenGuardado.substring(0, 80) + '...';
+      agregarLog('log-auth', '✔ Token guardado. Se adjuntara automaticamente a las siguientes peticiones.', 'info');
+    } else {
+      agregarLog('log-auth', r.status + ' → ' + JSON.stringify(data), 'err');
+    }
+  } catch(e) {
+    agregarLog('log-auth', 'Error: ' + e.message, 'err');
+  }
+}
+
+function getPreciosProducto() {
+  const id = document.getElementById('producto-id').value;
+  get('http://localhost:8081/productos/' + id + '/precios', 'log-productos');
+}
+</script>
+
+</body>
+</html>

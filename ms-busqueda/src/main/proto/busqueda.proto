@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+// Paquete del servicio gRPC
+// Quarkus genera automaticamente las clases Java a partir de este archivo
+option java_package = "com.profeco.busqueda.grpc";
+option java_outer_classname = "BusquedaProto";
+option java_multiple_files = true;
+
+package busqueda;
+
+// Contrato del servicio de busqueda
+// Define que metodos expone este servicio via gRPC
+service BusquedaService {
+
+  // Busca un producto por nombre y devuelve los precios en todas las tiendas
+  // ordenados de menor a mayor
+  rpc BuscarPrecios (BusquedaRequest) returns (BusquedaResponse);
+
+  // Compara un producto especifico entre todas las tiendas disponibles
+  rpc CompararPorId (CompararRequest) returns (BusquedaResponse);
+}
+
+// Mensaje de entrada para busqueda por nombre
+message BusquedaRequest {
+  string nombre_producto = 1;  // ej: "leche"
+}
+
+// Mensaje de entrada para comparar por ID de producto
+message CompararRequest {
+  int64 producto_id = 1;
+}
+
+// Un resultado individual: precio del producto en una tienda
+message ResultadoPrecio {
+  int64  producto_id    = 1;
+  string nombre_producto = 2;
+  int64  tienda_id      = 3;
+  string nombre_tienda  = 4;
+  string tipo_tienda    = 5;
+  double precio         = 6;
+  bool   es_oferta      = 7;
+}
+
+// Respuesta con lista de precios ordenados de menor a mayor
+message BusquedaResponse {
+  repeated ResultadoPrecio resultados = 1;
+  int32 total = 2;
+  string mensaje = 3;
+}

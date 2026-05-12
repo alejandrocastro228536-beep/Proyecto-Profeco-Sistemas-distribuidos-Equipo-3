@@ -1,0 +1,9 @@
+# El build se hace dentro del Dockerfile, no necesita target/ ni data/
+target/
+data/
+.git/
+*.iml
+.idea/
+nb-configuration.xml
+Dockerfile
+.dockerignore
