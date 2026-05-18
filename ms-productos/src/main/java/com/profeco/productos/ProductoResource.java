@@ -6,6 +6,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.util.List;
+import java.util.Map;
 
 // Endpoints REST del servicio de productos
 // Base URL: http://localhost:8081/productos
@@ -96,35 +97,61 @@ public class ProductoResource {
     // -------------------------------------------------------
 
     // POST /productos/ofertas → la tienda publica una oferta
-    // Esto guarda el precio con esOferta=true Y envia el evento a RabbitMQ
-    // ms-notificaciones consume ese evento y lo reenvía por WebSocket a los consumidores
-    // ProductoResource.java — método publicarOferta
-@POST
-@Path("/ofertas")
-@Transactional
-public Response publicarOferta(OfertaDTO oferta) {
-    // Verificar que el producto existe
-    Producto p = Producto.findById(oferta.productoId);
-    if (p == null) {
-        return Response.status(Response.Status.NOT_FOUND)
-                .entity("{\"error\": \"Producto no encontrado\"}")
+    // Guarda el precio con esOferta=true Y envia el evento a RabbitMQ
+    // ms-notificaciones consume el evento y lo reenvia por WebSocket a los consumidores
+    // Recibimos un Map en vez de OfertaDTO. Quarkus no logra registrar la ruta
+    // si declaramos OfertaDTO directamente (problema de scaneo de tipos).
+    // Mapeamos los campos manualmente al DTO antes de propagar el evento.
+    @POST
+    @Path("/ofertas")
+    @Transactional
+    public Response publicarOferta(Map<String, Object> body) {
+        OfertaDTO oferta = mapToOferta(body);
+
+        Producto p = Producto.findById(oferta.productoId);
+        if (p == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"error\": \"Producto no encontrado\"}")
+                    .build();
+        }
+
+        Precio precio = new Precio(
+            oferta.productoId,
+            oferta.tiendaId,
+            oferta.precioOferta,
+            true
+        );
+        precio.persist();
+
+        ofertaPublisher.publicarOferta(oferta);
+
+        return Response.ok()
+                .entity("{\"mensaje\": \"Oferta publicada y notificacion enviada\"}")
                 .build();
     }
 
-    // Guardar el precio de oferta en BD
-    Precio precio = new Precio(
-        oferta.productoId,
-        oferta.tiendaId,
-        oferta.precioOferta,
-        true
-    );
-    precio.persist();
+    private OfertaDTO mapToOferta(Map<String, Object> body) {
+        OfertaDTO o = new OfertaDTO();
+        o.productoId       = toLong(body.get("productoId"));
+        o.nombreProducto   = (String) body.get("nombreProducto");
+        o.tiendaId         = toLong(body.get("tiendaId"));
+        o.nombreTienda     = (String) body.get("nombreTienda");
+        o.precioOriginal   = toDouble(body.get("precioOriginal"));
+        o.precioOferta     = toDouble(body.get("precioOferta"));
+        o.descripcion      = (String) body.get("descripcion");
+        o.fechaExpiracion  = (String) body.get("fechaExpiracion");
+        return o;
+    }
 
-    // Publicar en RabbitMQ
-    ofertaPublisher.publicarOferta(oferta);
+    private static Long toLong(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.longValue();
+        return Long.parseLong(v.toString());
+    }
 
-    return Response.ok()
-            .entity("{\"mensaje\": \"Oferta publicada y notificacion enviada\"}")
-            .build();
-}
+    private static double toDouble(Object v) {
+        if (v == null) return 0.0;
+        if (v instanceof Number n) return n.doubleValue();
+        return Double.parseDouble(v.toString());
+    }
 }

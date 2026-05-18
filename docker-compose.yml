@@ -208,12 +208,14 @@ services:
       - ms-tiendas
       - ms-usuarios
       - ms-reportes
+      - ms-busqueda
     environment:
       QUARKUS_HTTP_PORT: 8080
       QUARKUS_REST_CLIENT_PRODUCTOS_API_URL: http://ms-productos:8081
       QUARKUS_REST_CLIENT_TIENDAS_API_URL: http://ms-tiendas:8082
       QUARKUS_REST_CLIENT_USUARIOS_API_URL: http://ms-usuarios:8083
       QUARKUS_REST_CLIENT_REPORTES_API_URL: http://ms-reportes:8084
+      QUARKUS_REST_CLIENT_BUSQUEDA_API_URL: http://ms-busqueda:8086
     networks: [profeco-net]
 
 networks:
