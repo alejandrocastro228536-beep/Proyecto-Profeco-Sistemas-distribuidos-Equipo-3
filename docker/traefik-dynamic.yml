@@ -1,0 +1,24 @@
+# Configuracion dinamica de Traefik (modo file provider)
+# Traefik reenvia a http://api-gateway:8080. Docker resuelve ese nombre
+# a la lista de replicas activas y hace round-robin a nivel DNS.
+# Cuando escales con `docker compose up --scale api-gateway=N`, las nuevas
+# replicas se descubren automaticamente.
+http:
+  routers:
+    gateway:
+      rule: "PathPrefix(`/`)"
+      service: gateway-service
+      entryPoints:
+        - web
+
+  services:
+    gateway-service:
+      loadBalancer:
+        # Una sola URL: Docker DNS hace el balanceo entre las replicas.
+        servers:
+          - url: "http://api-gateway:8080"
+        # Health check opcional: descarta replicas caidas
+        healthCheck:
+          path: /api/status
+          interval: "10s"
+          timeout: "3s"

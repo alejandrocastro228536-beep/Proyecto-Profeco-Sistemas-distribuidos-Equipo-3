@@ -24,6 +24,30 @@
 #   docker compose down -v            # detener y borrar volúmenes (resetea H2)
 
 services:
+  # ───────────────────────── Traefik (reverse proxy + load balancer) ─────────────────────────
+  # Usa file provider (en lugar del docker provider) para evitar problemas
+  # de socket en Docker Desktop Windows. Reenvia a http://api-gateway:8080
+  # y Docker DNS hace round-robin entre las replicas activas.
+  # Escalar: docker compose up -d --scale api-gateway=N
+  traefik:
+    image: traefik:v3.0
+    container_name: profeco-traefik
+    command:
+      - "--entrypoints.web.address=:80"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--providers.file.watch=true"
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.fields.defaultmode=keep"
+    ports:
+      - "8080:80"     # punto de entrada publico (el frontend pega aqui)
+      - "8090:8080"   # dashboard de Traefik → http://localhost:8090
+    volumes:
+      - ./docker/traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro
+    networks: [profeco-net]
+
   # ───────────────────────── PostgreSQL ─────────────────────────
   postgres:
     image: postgres:16-alpine
@@ -174,12 +198,11 @@ services:
       QUARKUS_REST_CLIENT_TIENDAS_INTERNO_URL: http://ms-tiendas:8082
     networks: [profeco-net]
 
-  # ───────────────────────── api-gateway :8080 ─────────────────────────
+  # ───────────────────────── api-gateway (escalable) ─────────────────────────
+  # Sin container_name y sin ports: Traefik se encarga del ingress.
+  # Para correr con varias replicas: docker compose up -d --scale api-gateway=3
   api-gateway:
     build: ./api-gateway
-    container_name: profeco-api-gateway
-    ports:
-      - "8080:8080"   # único endpoint público que consume el frontend
     depends_on:
       - ms-productos
       - ms-tiendas
