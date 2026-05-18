@@ -24,6 +24,25 @@
 #   docker compose down -v            # detener y borrar volúmenes (resetea H2)
 
 services:
+  # ───────────────────────── PostgreSQL ─────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: profeco-postgres
+    ports:
+      - "5433:5432"   # 5433 en el host para no chocar con el Postgres local
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/postgres-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [profeco-net]
+
   # ───────────────────────── RabbitMQ ─────────────────────────
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -44,13 +63,16 @@ services:
     container_name: profeco-ms-usuarios
     ports:
       - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       QUARKUS_HTTP_PORT: 8083
-      QUARKUS_DATASOURCE_JDBC_URL: jdbc:h2:file:/deployments/data/usuariosdb;AUTO_SERVER=TRUE
-      # Cambia drop-and-create a update si quieres que persistan los usuarios
-      # QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION: update
-    volumes:
-      - usuarios-data:/deployments/data
+      QUARKUS_DATASOURCE_DB_KIND: postgresql
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/usuariosdb
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION: update
     networks: [profeco-net]
 
   # ───────────────────────── ms-tiendas :8082 ─────────────────────────
@@ -59,11 +81,16 @@ services:
     container_name: profeco-ms-tiendas
     ports:
       - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       QUARKUS_HTTP_PORT: 8082
-      QUARKUS_DATASOURCE_JDBC_URL: jdbc:h2:file:/deployments/data/tiendasdb;AUTO_SERVER=TRUE
-    volumes:
-      - tiendas-data:/deployments/data
+      QUARKUS_DATASOURCE_DB_KIND: postgresql
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/tiendasdb
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION: update
     networks: [profeco-net]
 
   # ───────────────────────── ms-productos :8081 ─────────────────────────
@@ -73,17 +100,21 @@ services:
     ports:
       - "8081:8081"
     depends_on:
+      postgres:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
       QUARKUS_HTTP_PORT: 8081
-      QUARKUS_DATASOURCE_JDBC_URL: jdbc:h2:file:/deployments/data/productosdb;AUTO_SERVER=TRUE
+      QUARKUS_DATASOURCE_DB_KIND: postgresql
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/productosdb
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION: update
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: guest
       RABBITMQ_PASSWORD: guest
-    volumes:
-      - productos-data:/deployments/data
     networks: [profeco-net]
 
   # ───────────────────────── ms-reportes :8084 ─────────────────────────
@@ -93,17 +124,21 @@ services:
     ports:
       - "8084:8084"
     depends_on:
+      postgres:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
       QUARKUS_HTTP_PORT: 8084
-      QUARKUS_DATASOURCE_JDBC_URL: jdbc:h2:file:/deployments/data/reportesdb;AUTO_SERVER=TRUE
+      QUARKUS_DATASOURCE_DB_KIND: postgresql
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/reportesdb
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION: update
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: guest
       RABBITMQ_PASSWORD: guest
-    volumes:
-      - reportes-data:/deployments/data
     networks: [profeco-net]
 
   # ───────────────────────── ms-notificaciones :8085 ─────────────────────────
@@ -163,7 +198,4 @@ networks:
     driver: bridge
 
 volumes:
-  usuarios-data:
-  tiendas-data:
-  productos-data:
-  reportes-data:
+  postgres-data:

@@ -36,14 +36,14 @@
       <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
 
-    <!-- ORM + base de datos H2 en memoria (sin instalar nada) -->
+    <!-- ORM + PostgreSQL -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-hibernate-orm-panache</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-jdbc-h2</artifactId>
+      <artifactId>quarkus-jdbc-postgresql</artifactId>
     </dependency>
 
     <!-- RabbitMQ para publicar ofertas -->

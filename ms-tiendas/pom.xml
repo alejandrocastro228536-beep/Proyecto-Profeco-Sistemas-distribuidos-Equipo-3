@@ -36,14 +36,14 @@
       <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
 
-    <!-- ORM + H2 en memoria -->
+    <!-- ORM + PostgreSQL -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-hibernate-orm-panache</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-jdbc-h2</artifactId>
+      <artifactId>quarkus-jdbc-postgresql</artifactId>
     </dependency>
 
     <!-- Pruebas -->
