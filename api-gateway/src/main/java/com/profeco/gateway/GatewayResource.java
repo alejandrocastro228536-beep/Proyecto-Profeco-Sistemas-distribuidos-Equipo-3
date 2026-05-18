@@ -1,6 +1,8 @@
 package com.profeco.gateway;
 
+import io.quarkus.security.Authenticated;
 import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -8,8 +10,11 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 // Punto de entrada unico del sistema: http://localhost:8080
-// JWT desactivado temporalmente — todos los endpoints son publicos para pruebas
-// Cuando tengas las claves PEM generadas, cambia @PermitAll por @RolesAllowed
+// Cada endpoint declara su politica de acceso:
+//   @PermitAll               -> publico (status, login, registro, catalogo)
+//   @Authenticated           -> requiere token valido, cualquier rol
+//   @RolesAllowed({"TIENDA"})-> solo tiendas (publicar productos/precios/ofertas)
+//   @RolesAllowed({"ADMIN"}) -> solo ProFeCo (ver reportes, sancionar)
 @Path("/api")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -58,14 +63,14 @@ public class GatewayResource {
 
     @GET
     @Path("/usuarios/{id}/preferencias")
-    @PermitAll
+    @Authenticated
     public Response listarPreferencias(@PathParam("id") Long id) {
         return usuariosClient.listarPreferencias(id);
     }
 
     @GET
     @Path("/usuarios/{id}/preferencias/{tipo}")
-    @PermitAll
+    @Authenticated
     public Response preferenciasPorTipo(
             @PathParam("id") Long id,
             @PathParam("tipo") String tipo) {
@@ -74,14 +79,14 @@ public class GatewayResource {
 
     @POST
     @Path("/usuarios/{id}/preferencias")
-    @PermitAll
+    @Authenticated
     public Response agregarPreferencia(@PathParam("id") Long id, Object body) {
         return usuariosClient.agregarPreferencia(id, body);
     }
 
     @DELETE
     @Path("/usuarios/{id}/preferencias/{prefId}")
-    @PermitAll
+    @Authenticated
     public Response eliminarPreferencia(
             @PathParam("id") Long id,
             @PathParam("prefId") Long prefId) {
@@ -109,7 +114,7 @@ public class GatewayResource {
 
     @POST
     @Path("/productos")
-    @PermitAll
+    @RolesAllowed({"TIENDA"})
     public Response crearProducto(Object body) {
         return productosClient.crear(body);
     }
@@ -124,7 +129,7 @@ public class GatewayResource {
 
     @POST
     @Path("/productos/{id}/precios")
-    @PermitAll
+    @RolesAllowed({"TIENDA"})
     public Response agregarPrecio(@PathParam("id") Long id, Object body) {
         return productosClient.agregarPrecio(id, body);
     }
@@ -132,7 +137,7 @@ public class GatewayResource {
     // POST /api/productos/ofertas → publica oferta + dispara RabbitMQ + WebSocket
     @POST
     @Path("/productos/ofertas")
-    @PermitAll
+    @RolesAllowed({"TIENDA"})
     public Response publicarOferta(Object body) {
         return productosClient.publicarOferta(body);
     }
@@ -165,21 +170,21 @@ public class GatewayResource {
 
     @POST
     @Path("/tiendas")
-    @PermitAll
+    @RolesAllowed({"TIENDA", "ADMIN"})
     public Response crearTienda(Object body) {
         return tiendasClient.crear(body);
     }
 
     @PUT
     @Path("/tiendas/{id}")
-    @PermitAll
+    @RolesAllowed({"TIENDA", "ADMIN"})
     public Response actualizarTienda(@PathParam("id") Long id, Object body) {
         return tiendasClient.actualizar(id, body);
     }
 
     @DELETE
     @Path("/tiendas/{id}")
-    @PermitAll
+    @RolesAllowed({"ADMIN"})
     public Response desactivarTienda(@PathParam("id") Long id) {
         return tiendasClient.desactivar(id);
     }
@@ -191,14 +196,14 @@ public class GatewayResource {
     // GET /api/reportes → panel ProFeCo ve todos los reportes
     @GET
     @Path("/reportes")
-    @PermitAll
+    @RolesAllowed({"ADMIN"})
     public Response listarReportes() {
         return reportesClient.listar();
     }
 
     @GET
     @Path("/reportes/tienda/{id}")
-    @PermitAll
+    @RolesAllowed({"ADMIN"})
     public Response reportesPorTienda(@PathParam("id") Long id) {
         return reportesClient.listarPorTienda(id);
     }
@@ -207,7 +212,7 @@ public class GatewayResource {
     // Al llegar al 3er reporte de la misma tienda se dispara alerta en RabbitMQ
     @POST
     @Path("/reportes")
-    @PermitAll
+    @Authenticated
     public Response crearReporte(Object body) {
         return reportesClient.crear(body);
     }
@@ -215,7 +220,7 @@ public class GatewayResource {
     // PUT /api/reportes/{id}/estado?estado=SANCIONADO → ProFeCo aplica sancion
     @PUT
     @Path("/reportes/{id}/estado")
-    @PermitAll
+    @RolesAllowed({"ADMIN"})
     public Response actualizarEstadoReporte(
             @PathParam("id") Long id,
             @QueryParam("estado") String estado) {

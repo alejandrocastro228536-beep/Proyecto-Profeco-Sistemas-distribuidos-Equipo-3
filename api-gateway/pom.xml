@@ -42,6 +42,12 @@
       <artifactId>quarkus-rest-client-jackson</artifactId>
     </dependency>
 
+    <!-- JWT: valida los tokens emitidos por ms-usuarios usando la clave publica -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-jwt</artifactId>
+    </dependency>
+
     <!-- Pruebas -->
     <dependency>
       <groupId>io.quarkus</groupId>
