@@ -26,6 +26,8 @@ public class GatewayResource {
     @Inject @RestClient UsuariosClient usuariosClient;
     @Inject @RestClient BusquedaClient busquedaClient;
     @Inject @RestClient SancionesClient sancionesClient;
+    @Inject @RestClient ResenasClient resenasClient;
+    @Inject @RestClient WishlistClient wishlistClient;
 
     // -------------------------------------------------------
     // STATUS — verifica que el gateway responde
@@ -294,5 +296,87 @@ public class GatewayResource {
     @RolesAllowed({"TIENDA", "ADMIN"})
     public Response apelarSancion(@PathParam("id") Long id) {
         return sancionesClient.apelar(id);
+    }
+
+    // -------------------------------------------------------
+    // RESENAS — calificacion + comentario de un consumidor a una tienda
+    // -------------------------------------------------------
+
+    // POST /api/resenas → cualquier usuario logueado deja resena
+    @POST
+    @Path("/resenas")
+    @Authenticated
+    public Response crearResena(Object body) {
+        return resenasClient.crear(body);
+    }
+
+    // GET /api/resenas/tienda/{id} → publico: ver resenas de una tienda
+    @GET
+    @Path("/resenas/tienda/{id}")
+    @PermitAll
+    public Response resenasDeTienda(@PathParam("id") Long id) {
+        return resenasClient.listarPorTienda(id);
+    }
+
+    // GET /api/resenas/tienda/{id}/resumen → publico: promedio + total
+    @GET
+    @Path("/resenas/tienda/{id}/resumen")
+    @PermitAll
+    public Response resumenResenasTienda(@PathParam("id") Long id) {
+        return resenasClient.resumenTienda(id);
+    }
+
+    // GET /api/resenas/usuario/{id} → el consumidor ve sus propias resenas
+    @GET
+    @Path("/resenas/usuario/{id}")
+    @Authenticated
+    public Response resenasDeUsuario(@PathParam("id") Long id) {
+        return resenasClient.listarPorUsuario(id);
+    }
+
+    // DELETE /api/resenas/{id} → admin modera (o el consumidor borra la propia)
+    @DELETE
+    @Path("/resenas/{id}")
+    @Authenticated
+    public Response eliminarResena(@PathParam("id") Long id) {
+        return resenasClient.eliminar(id);
+    }
+
+    // -------------------------------------------------------
+    // WISHLIST — el consumidor le pide a la tienda que ofrezca un producto
+    // -------------------------------------------------------
+
+    // POST /api/wishlist → cualquier usuario logueado pide
+    @POST
+    @Path("/wishlist")
+    @Authenticated
+    public Response crearWishlist(Object body) {
+        return wishlistClient.crear(body);
+    }
+
+    // GET /api/wishlist/tienda/{id} → la tienda (o ProFeCo) ve las peticiones
+    @GET
+    @Path("/wishlist/tienda/{id}")
+    @RolesAllowed({"TIENDA", "ADMIN"})
+    public Response wishlistDeTienda(@PathParam("id") Long id) {
+        return wishlistClient.listarPorTienda(id);
+    }
+
+    // GET /api/wishlist/usuario/{id} → el consumidor ve sus propias peticiones
+    @GET
+    @Path("/wishlist/usuario/{id}")
+    @Authenticated
+    public Response wishlistDeUsuario(@PathParam("id") Long id) {
+        return wishlistClient.listarPorUsuario(id);
+    }
+
+    // PUT /api/wishlist/{id}/estado → la tienda marca atendida/rechazada
+    @PUT
+    @Path("/wishlist/{id}/estado")
+    @RolesAllowed({"TIENDA", "ADMIN"})
+    public Response actualizarEstadoWishlist(
+            @PathParam("id") Long id,
+            @QueryParam("estado") String estado) {
+        return wishlistClient.actualizarEstado(id, estado);
     }
 }
