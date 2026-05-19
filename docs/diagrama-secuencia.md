@@ -22,9 +22,19 @@ Componentes que aparecen en los diagramas:
 - `profeco-frontend` (Next.js, en el navegador del usuario)
 - `Traefik` (reverse proxy + load balancer, host:8080)
 - `api-gateway` (Quarkus, valida JWT y enruta)
-- `ms-usuarios`, `ms-tiendas`, `ms-productos`, `ms-reportes`, `ms-busqueda`, `ms-notificaciones`
+- `ms-usuarios`, `ms-tiendas`, `ms-productos`, `ms-reportes`, `ms-notificaciones`
+- **`ms-busqueda`** — caso especial: expone dos interfaces simultáneas:
+  - **HTTP/REST** en puerto 8086 (lo que consume el api-gateway)
+  - **gRPC/Protobuf** en puerto 9000 (contrato `busqueda.proto`, solo accesible dentro de la red interna `profeco-net`)
 - `PostgreSQL` (4 bases independientes)
 - `RabbitMQ` (exchanges fanout: `ofertas`, `inconsistencias`)
+
+> **Nota importante sobre `ms-busqueda`**: aunque expone gRPC, las
+> llamadas **salientes** desde `ms-busqueda` hacia `ms-productos` y
+> `ms-tiendas` se hacen por **HTTP/REST** (a través de los
+> `@RegisterRestClient` `ProductosInternoClient` y `TiendasInternoClient`).
+> El gRPC es solo para los **clientes** de `ms-busqueda`, no para sus
+> dependencias.
 
 ---
 
@@ -45,8 +55,10 @@ claro:
 
 ## 3. Casos de uso a diagramar
 
-Se piden **cuatro diagramas de secuencia**. Cada uno cubre un flujo
-end-to-end completo.
+Se piden **cinco diagramas de secuencia**. Cada uno cubre un flujo
+end-to-end completo. Los casos 4 y 5 son variantes del mismo caso de uso
+("Quién es Quién en los Precios") accedido por dos protocolos distintos,
+para mostrar la coexistencia REST + gRPC.
 
 ---
 
@@ -246,36 +258,44 @@ WebSocket de ofertas la reciben al instante.
 
 ---
 
-### Caso 4 — Comparación de precios ("Quién es Quién en los Precios")
+### Caso 4 — Comparación de precios vía REST (camino del navegador)
 
 **Actor principal**: Consumidor (puede ser anónimo, endpoint público).
 
-**Resumen**: un usuario busca "leche" y el sistema devuelve el precio de
-ese producto en todas las tiendas. Este caso ilustra la **agregación
-síncrona** entre dos microservicios.
+**Resumen**: un usuario busca "leche" desde el navegador y el sistema
+devuelve el precio de ese producto en todas las tiendas. Este caso
+ilustra la **agregación síncrona** dentro de `ms-busqueda`, que combina
+datos de `ms-productos` y `ms-tiendas`.
 
 **Pasos detallados**:
 
 1. **Usuario** escribe "leche" en la barra de búsqueda de `/busqueda`.
 2. **Frontend** envía `GET http://localhost:8080/api/busqueda?nombre=leche`.
+   - Protocolo: HTTP/REST + JSON.
    - Endpoint público → sin JWT obligatorio.
 3. **Traefik** → **api-gateway**.
-4. **api-gateway** matchea `@PermitAll`, no valida JWT, reenvía a
-   `http://ms-busqueda:8086/busqueda?nombre=leche`.
-5. **ms-busqueda** orquesta dos llamadas REST en paralelo:
-   - `GET http://ms-productos:8081/productos?nombre=leche` →
-     devuelve los productos cuyo nombre matchea.
-   - Por cada producto, `GET http://ms-productos:8081/productos/{id}/precios`
-     → devuelve los precios en todas las tiendas.
-   - `GET http://ms-tiendas:8082/tiendas` → para mapear `tiendaId` a
-     `nombre`/`tipo`.
-6. **ms-busqueda** **agrega** la respuesta: una lista de productos, cada
-   uno con sus precios y nombre de la tienda. Identifica el precio más
-   bajo y el más alto.
-7. **ms-busqueda** responde al gateway con el JSON agregado.
+4. **api-gateway** matchea `@PermitAll`, no valida JWT, reenvía vía REST
+   a `http://ms-busqueda:8086/busqueda?nombre=leche` (puerto **HTTP/REST**
+   de `ms-busqueda`, atendido por `BusquedaResource`).
+5. **ms-busqueda.BusquedaResource** delega en `BusquedaLogic`, que
+   orquesta llamadas REST salientes a los otros microservicios:
+   - `GET http://ms-productos:8081/productos` (`ProductosInternoClient.listar()`)
+     → trae el catálogo y filtra los productos cuyo nombre contiene "leche".
+   - Por cada producto que matchea:
+     `GET http://ms-productos:8081/productos/{id}/precios`
+     (`ProductosInternoClient.listarPrecios(id)`) → trae los precios en
+     todas las tiendas.
+     Y por cada precio: `GET http://ms-tiendas:8082/tiendas/{tiendaId}`
+     (`TiendasInternoClient.obtener(id)`) → enriquece con
+     `nombre`/`tipo` de la tienda.
+   - **Todas estas llamadas son HTTP/REST + JSON.** No son gRPC.
+6. **ms-busqueda** **agrega** la respuesta: lista de resultados ordenada
+   por precio (de menor a mayor) con producto, tienda y bandera de
+   oferta.
+7. **ms-busqueda** responde al gateway con el JSON agregado
+   (`BusquedaResponseDTO`).
 8. **api-gateway** → **frontend**.
-9. **Frontend** renderiza la comparación: tarjeta verde para el precio
-   más bajo, roja para el más alto.
+9. **Frontend** renderiza la comparación.
 
 **Seguridad aplicada**:
 - Endpoint público (`@PermitAll`). No se exponen datos sensibles — solo
@@ -284,11 +304,88 @@ síncrona** entre dos microservicios.
 **Comunicaciones (justificación)**:
 - **REST síncrono** desde el inicio hasta el fin: el usuario espera el
   resultado de su búsqueda. No es un evento, es una consulta de lectura.
-- `ms-busqueda` **no replica** los catálogos de productos ni tiendas;
-  consulta en tiempo real. Justificación: la replicación traería
-  problemas de consistencia eventual (mostrar precios desactualizados)
-  y el costo de latencia agregada es aceptable porque solo hay 2–3
-  llamadas REST y todas son en red privada de baja latencia.
+- Se usa REST y no gRPC porque el cliente original es un **navegador**.
+  El navegador no habla gRPC nativo (necesitaría gRPC-web + un proxy
+  adicional), y el gateway ya centraliza HTTP/JWT. Mantener HTTP en este
+  camino simplifica la arquitectura.
+- `ms-busqueda` **no replica** los catálogos; consulta en tiempo real.
+  La replicación traería problemas de consistencia eventual (precios
+  desactualizados) y el costo de latencia agregada es aceptable porque
+  todas las llamadas son en red privada `profeco-net` de baja latencia.
+
+---
+
+### Caso 5 — Comparación de precios vía gRPC (camino inter-servicio)
+
+**Actor principal**: Otro microservicio o herramienta de prueba
+(p. ej. `grpcurl`) que vive dentro de la red `profeco-net`.
+
+**Resumen**: el mismo caso de uso del Caso 4, pero accediendo por la
+**interfaz gRPC** de `ms-busqueda`. Sirve para mostrar la coexistencia
+de protocolos y por qué un consumidor inter-servicio escogería gRPC en
+lugar de REST.
+
+**Contexto técnico**:
+- `ms-busqueda` corre dos servidores simultáneos:
+  - HTTP server en puerto **8086** (atiende REST)
+  - gRPC server en puerto **9000** (atiende Protobuf)
+- El contrato gRPC está en `ms-busqueda/src/main/proto/busqueda.proto`:
+  - Servicio: `BusquedaService`
+  - RPC: `BuscarPrecios(BusquedaRequest) returns (BusquedaResponse)`
+  - RPC: `CompararPorId(CompararRequest) returns (BusquedaResponse)`
+- El puerto 9000 **NO está mapeado al host** en `docker-compose.yml` —
+  solo es alcanzable desde dentro de la red Docker `profeco-net`. Esto
+  es intencional: gRPC es para comunicación intra-clúster.
+
+**Pasos detallados**:
+
+1. **Cliente gRPC** (otro microservicio o `grpcurl` dentro de un
+   contenedor de la red `profeco-net`) construye un `BusquedaRequest`
+   con `nombre_producto = "leche"`.
+2. **Cliente** serializa el mensaje a **Protobuf binario** y abre una
+   conexión **HTTP/2** a `ms-busqueda:9000` (gRPC corre sobre HTTP/2).
+3. **ms-busqueda.BusquedaGrpcService** recibe el RPC `BuscarPrecios`.
+   Quarkus deserializa el Protobuf a la clase generada `BusquedaRequest`
+   a partir del `.proto`.
+4. **BusquedaGrpcService.buscarPrecios()** delega en la **misma**
+   `BusquedaLogic` que usa la interfaz REST (sección 5 del Caso 4).
+5. `BusquedaLogic` ejecuta las mismas llamadas REST salientes a
+   `ms-productos` y `ms-tiendas`:
+   - `GET http://ms-productos:8081/productos`
+   - `GET http://ms-productos:8081/productos/{id}/precios`
+   - `GET http://ms-tiendas:8082/tiendas/{tiendaId}`
+6. **BusquedaGrpcService** convierte los `ResultadoBusquedaDTO`
+   internos al mensaje Protobuf `ResultadoPrecio` y los empaqueta en
+   un `BusquedaResponse`.
+7. **ms-busqueda** serializa el `BusquedaResponse` a Protobuf y lo
+   envía al cliente sobre HTTP/2.
+8. **Cliente gRPC** deserializa el binario a la clase generada y
+   consume el resultado.
+
+**Seguridad aplicada**:
+- En esta implementación demo, el endpoint gRPC **no requiere JWT**:
+  vive en la red privada `profeco-net` y se asume confianza
+  intra-clúster (mismo modelo de seguridad que las llamadas REST
+  internas entre `api-gateway` y los demás microservicios).
+- En producción real se podría agregar TLS mutuo (mTLS) entre
+  microservicios o un interceptor de gRPC que valide JWT, igual que el
+  gateway lo hace sobre HTTP.
+
+**Comunicaciones (justificación)**:
+- **gRPC sobre HTTP/2 + Protobuf**:
+  - **Eficiencia**: payload binario, varias veces más pequeño que el
+    JSON equivalente; serialización/deserialización más rápida.
+  - **Contrato fuerte**: el `.proto` es la fuente de verdad. Tanto el
+    servidor como el cliente generan código tipado a partir del
+    archivo; cualquier cambio incompatible se detecta en compilación.
+  - **Multiplexing HTTP/2**: múltiples RPCs concurrentes sobre una
+    misma conexión TCP, ideal para tráfico inter-servicio sostenido.
+  - **Streaming** disponible (no usado aquí, pero parte del contrato
+    gRPC) para futuros casos de uso de resultados parciales.
+- **Sigue siendo REST** la salida de `ms-busqueda` hacia `ms-productos`
+  y `ms-tiendas` — el cambio de protocolo de entrada no propaga; cada
+  microservicio elige el protocolo que mejor se ajusta a sus
+  consumidores.
 
 ---
 
@@ -315,10 +412,10 @@ Se puede generar en **PlantUML** (`@startuml ... @enduml` con
 `participant`/`actor`/`->`/`-->>`) o en **Mermaid**
 (`sequenceDiagram`). Ambos texto.
 
-### Ejemplo de etiqueta
+### Ejemplo de etiqueta (Caso 2 — reporte que dispara sanción)
 
 ```
-Frontend -> Traefik: POST /api/reportes (HTTP, body, Bearer JWT)
+Frontend -> Traefik: POST /api/reportes (HTTP/REST, Bearer JWT)
 Traefik -> api-gateway: HTTP (round-robin)
 api-gateway -> api-gateway: verify JWT (RSA pubkey)
 api-gateway -> ms-reportes: POST /reportes (HTTP/REST interno)
@@ -334,14 +431,30 @@ par
 end
 ```
 
+### Ejemplo de etiqueta (Caso 5 — comparación vía gRPC)
+
+```
+Cliente gRPC -> ms-busqueda: BuscarPrecios(nombre="leche")  \
+                                                            } gRPC/HTTP2 + Protobuf
+note: payload binario, no JSON                              /
+
+ms-busqueda -> ms-productos: GET /productos        (HTTP/REST + JSON saliente)
+ms-productos --> ms-busqueda: [productos...]
+ms-busqueda -> ms-productos: GET /productos/{id}/precios (HTTP/REST + JSON)
+ms-productos --> ms-busqueda: [precios...]
+ms-busqueda -> ms-tiendas: GET /tiendas/{id}       (HTTP/REST + JSON)
+ms-tiendas --> ms-busqueda: tienda
+ms-busqueda --> Cliente gRPC: BusquedaResponse     (gRPC/HTTP2 + Protobuf)
+```
+
 ---
 
 ## 5. Prompt sugerido para Claude web
 
 > A continuación tienes el briefing completo de los flujos de ProFeCo.
-> Por favor genera **cuatro diagramas de secuencia UML**, uno por cada
+> Por favor genera **cinco diagramas de secuencia UML**, uno por cada
 > caso de uso descrito (Login, Crear reporte + sanción, Publicar oferta,
-> Comparar precios).
+> Comparar precios vía REST, Comparar precios vía gRPC).
 >
 > Para cada diagrama:
 > 1. Genera el código en **PlantUML** y también en **Mermaid** para que
@@ -351,10 +464,15 @@ end
 > 3. Usa `par` cuando haya pasos que ocurren en paralelo (p. ej., la
 >    respuesta al usuario y la propagación del evento por RabbitMQ y
 >    WebSocket).
-> 4. Etiqueta cada mensaje con el protocolo (HTTP/REST, AMQP, WebSocket,
->    JDBC) y, si aplica, la cabecera de seguridad (`Bearer JWT`).
-> 5. Acompaña cada diagrama con una **explicación textual** que
->    justifique por qué cada salto es síncrono o asíncrono, y qué
->    estrategia de seguridad se aplica.
+> 4. Etiqueta cada mensaje con el protocolo (**HTTP/REST + JSON**,
+>    **gRPC sobre HTTP/2 + Protobuf**, **AMQP**, **WebSocket**, **JDBC**)
+>    y, si aplica, la cabecera de seguridad (`Bearer JWT`).
+> 5. En los Casos 4 y 5, muestra explícitamente que `ms-busqueda` corre
+>    **dos servidores simultáneos** (HTTP en 8086 y gRPC en 9000) y que
+>    ambos delegan en la misma `BusquedaLogic`, que internamente sale por
+>    REST a `ms-productos` y `ms-tiendas`.
+> 6. Acompaña cada diagrama con una **explicación textual** que
+>    justifique por qué cada salto es síncrono o asíncrono, qué protocolo
+>    se eligió en cada punto y qué estrategia de seguridad se aplica.
 >
 > [pegar aquí TODO el contenido de las secciones 1–4]

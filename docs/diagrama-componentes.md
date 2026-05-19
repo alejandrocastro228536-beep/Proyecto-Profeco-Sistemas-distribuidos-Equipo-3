@@ -62,7 +62,7 @@ El diagrama debe permitir a un lector entender de un vistazo:
 | **ms-tiendas** | 8082 | `tiendasdb` (Postgres) | CRUD de tiendas, reseñas (1–5 estrellas) y wishlist (peticiones de consumidores). |
 | **ms-productos** | 8081 | `productosdb` (Postgres) | Catálogo de productos, precios por tienda y publicación de ofertas. **Productor** de eventos `ofertas` en RabbitMQ. |
 | **ms-reportes** | 8084 | `reportesdb` (Postgres) | Reportes de inconsistencias de precio. Genera sanciones automáticas al rebasar umbrales (3 → ADVERTENCIA, 6 → MULTA_MENOR, 10 → MULTA_MAYOR). **Productor** de eventos `inconsistencias` en RabbitMQ. |
-| **ms-busqueda** | 8086 | — (sin BD propia) | Servicio agregador. Hace llamadas REST a `ms-productos` y `ms-tiendas` para responder consultas tipo "compara este producto en todas las tiendas". |
+| **ms-busqueda** | 8086 (HTTP) **+ 9000 (gRPC)** | — (sin BD propia) | Servicio agregador con **doble interfaz pública**: expone los mismos casos de uso como (a) endpoints HTTP/REST en 8086 (`BusquedaResource`, consumido por el api-gateway) y (b) servicio **gRPC** en 9000 (`BusquedaGrpcService`, definido por el contrato Protobuf `busqueda.proto` con RPCs `BuscarPrecios` y `CompararPorId`). Internamente ambas interfaces delegan en la misma `BusquedaLogic`, que hace llamadas **REST** a `ms-productos` y `ms-tiendas` para agregar y comparar precios. |
 | **ms-notificaciones** | 8085 | — (sin BD) | **Consumidor** de los exchanges `ofertas` e `inconsistencias` de RabbitMQ. Expone un endpoint **WebSocket** que mantiene sesiones abiertas con los clientes y les hace broadcast de los eventos recibidos. |
 
 ### 3.4 Infraestructura de datos y mensajería
@@ -92,7 +92,7 @@ Nodo: máquina del usuario (Windows / Linux / Mac con Docker Desktop)
         ├── Contenedor: profeco-ms-tiendas       (puerto host 8082)
         ├── Contenedor: profeco-ms-productos     (puerto host 8081)
         ├── Contenedor: profeco-ms-reportes      (puerto host 8084)
-        ├── Contenedor: profeco-ms-busqueda      (puerto host 8086)
+        ├── Contenedor: profeco-ms-busqueda      (puerto host 8086 HTTP, puerto 9000 gRPC solo en red interna)
         ├── Contenedor: profeco-ms-notificaciones(puerto host 8085)
         └── Contenedor(es): api-gateway × N      (sin puerto host; expuesto vía Traefik)
 ```
@@ -125,11 +125,25 @@ y por mensajería (`amqp://rabbitmq:5672`), nunca por `localhost` entre sí.
 - **Implementación**: MicroProfile REST Client de Quarkus. URLs configuradas vía env vars (`QUARKUS_REST_CLIENT_PRODUCTOS_API_URL=http://ms-productos:8081`).
 - **Justificación**: el gateway necesita respuestas para devolver al frontend en la misma petición. REST mantiene la simplicidad y el contrato HTTP de extremo a extremo. Esto es **comunicación interna en red privada `profeco-net`** — no se expone al exterior.
 
-### 5.4 ms-busqueda ↔ ms-productos / ms-tiendas: **HTTP/REST + JSON**
+### 5.4 ms-busqueda ↔ ms-productos / ms-tiendas: **HTTP/REST + JSON** (saliente)
 - **Tipo**: síncrono, request/response.
-- **Justificación**: `ms-busqueda` es un **agregador**. Cuando el usuario busca "leche", consulta productos en `ms-productos` y enriquece con datos de tiendas en `ms-tiendas`. Necesita ambas respuestas para construir la suya, así que la sincronía es inherente. Aquí se evita reproducir los catálogos por replicación porque el costo de consistencia eventual sería mayor.
+- **Implementación**: MicroProfile REST Client (`ProductosInternoClient`, `TiendasInternoClient`) en `ms-busqueda`.
+- **Justificación**: `ms-busqueda` es un **agregador**. Cuando llega una consulta, llama a `ms-productos` para traer el catálogo y los precios, y a `ms-tiendas` para enriquecer cada precio con el nombre/tipo de la tienda. Necesita ambas respuestas para construir la suya, así que la sincronía es inherente. Aquí se evita reproducir los catálogos por replicación porque el costo de consistencia eventual sería mayor (mostrar precios desactualizados).
 
-### 5.5 ms-productos / ms-reportes → RabbitMQ: **AMQP (publish)**
+### 5.5 Clientes ↔ ms-busqueda: **doble interfaz HTTP/REST + gRPC/Protobuf** (entrante)
+- `ms-busqueda` **expone los mismos casos de uso por dos protocolos** simultáneamente, sobre los puertos 8086 (HTTP) y 9000 (gRPC).
+- **HTTP/REST (puerto 8086)**: lo consume el `api-gateway` porque el flujo principal viene del navegador, que ya habla HTTP/JSON y porque el gateway centraliza JWT sobre HTTP.
+- **gRPC/Protobuf (puerto 9000)**: contrato definido en `ms-busqueda/src/main/proto/busqueda.proto`. RPCs disponibles:
+  - `BuscarPrecios(BusquedaRequest) → BusquedaResponse`
+  - `CompararPorId(CompararRequest) → BusquedaResponse`
+- **Justificación de exponer gRPC además de REST**:
+  - **Eficiencia de serialización**: Protobuf es binario, tipado y compacto; reduce ancho de banda y latencia frente a JSON.
+  - **Contrato fuerte**: el `.proto` es la fuente de verdad para la API; cualquier cliente (Java, Go, Python) puede generar stubs y obtener errores de compilación si el contrato cambia.
+  - **Streaming**: gRPC habilita streaming bidireccional fácilmente, útil si en el futuro `ms-busqueda` necesita publicar resultados parciales en tiempo real.
+  - **Comunicación inter-servicio**: cuando un microservicio (no un navegador) consume `ms-busqueda`, gRPC es más eficiente que REST. El puerto 9000 **no está mapeado al host** — solo es accesible dentro de la red `profeco-net`, justamente para esto.
+  - En este proyecto, la doble interfaz también cumple un objetivo académico: demostrar la coexistencia de protocolos sin acoplarse a uno solo.
+
+### 5.6 ms-productos / ms-reportes → RabbitMQ: **AMQP (publish)**
 - **Tipo**: asíncrono, **fire-and-forget**.
 - **Exchanges fanout**:
   - `ofertas`: lo publica `ms-productos` cuando una tienda crea una promoción.
@@ -139,12 +153,12 @@ y por mensajería (`amqp://rabbitmq:5672`), nunca por `localhost` entre sí.
   - **Resiliencia**: si `ms-notificaciones` está caído, RabbitMQ mantiene los mensajes en la cola y los entrega cuando vuelva.
   - **Patrón fanout**: todos los suscriptores reciben todos los eventos. Útil porque la decisión de **a quién** notificar (a qué WebSockets) es responsabilidad del consumidor, no del productor.
 
-### 5.6 RabbitMQ → ms-notificaciones: **AMQP (subscribe)**
+### 5.7 RabbitMQ → ms-notificaciones: **AMQP (subscribe)**
 - **Tipo**: asíncrono, **push** desde el broker.
 - **Implementación**: SmallRye Reactive Messaging con `@Incoming("ofertas-in")` y `@Incoming("inconsistencias-in")`.
 - **Justificación**: complementa lo anterior. El consumidor reacciona a eventos en vez de hacer polling.
 
-### 5.7 Microservicios ↔ PostgreSQL: **TCP/JDBC**
+### 5.8 Microservicios ↔ PostgreSQL: **TCP/JDBC**
 - **Tipo**: síncrono, pool de conexiones gestionado por Quarkus / Agroal.
 - **Patrón**: **database-per-service**. Cada microservicio solo ve su base. No hay JOINs cross-database. Ej.: `reporte.nombre_tienda` se copia en lugar de hacer JOIN a `tiendasdb`.
 - **Justificación**: el database-per-service evita que un cambio de esquema en un servicio rompa a otros; permite escoger motores distintos por dominio (aquí todos son Postgres por simplicidad); habilita escalar la base de cada servicio independientemente.
@@ -210,8 +224,10 @@ Puedes generar el diagrama en **PlantUML** o **Mermaid** (`flowchart` o
 | profeco-frontend | Traefik | `HTTPS/REST` (en dev: HTTP) — JWT en `Authorization: Bearer` |
 | profeco-frontend | ms-notificaciones | `WebSocket` — broadcast asíncrono |
 | Traefik | api-gateway | `HTTP round-robin` (load balancing) |
-| api-gateway | ms-* | `HTTP/REST` interno (red privada) |
-| ms-busqueda | ms-productos, ms-tiendas | `HTTP/REST` (agregación síncrona) |
+| api-gateway | ms-* (excepto ms-busqueda) | `HTTP/REST` interno (red privada) |
+| api-gateway | ms-busqueda | `HTTP/REST` interno (puerto 8086) — gateway prefiere REST porque ya proxea HTTP/JSON |
+| (otro microservicio en el futuro) | ms-busqueda | `gRPC/Protobuf` (puerto 9000, solo red interna) — alternativa binaria, tipada por `.proto` |
+| ms-busqueda | ms-productos, ms-tiendas | `HTTP/REST` saliente (agregación síncrona) |
 | ms-productos | RabbitMQ | `AMQP publish` — exchange `ofertas` (fanout) |
 | ms-reportes | RabbitMQ | `AMQP publish` — exchange `inconsistencias` (fanout) |
 | RabbitMQ | ms-notificaciones | `AMQP subscribe` — push asíncrono |
@@ -227,11 +243,16 @@ Puedes generar el diagrama en **PlantUML** o **Mermaid** (`flowchart` o
 >
 > 1. Todos los componentes lógicos listados (frontend, gateway, los 6
 >    microservicios, Postgres, RabbitMQ, Traefik).
-> 2. Los nodos físicos (contenedores Docker) que los alojan.
+> 2. Los nodos físicos (contenedores Docker) que los alojan, incluyendo
+>    los **puertos expuestos al host vs. los puertos internos**
+>    (importante: el puerto 9000 gRPC de `ms-busqueda` es solo interno).
 > 3. Las comunicaciones entre componentes, etiquetadas con el protocolo
->    (HTTP/REST, WebSocket, AMQP, JDBC) y el patrón (síncrono / asíncrono
->    / pub-sub).
-> 4. Los puntos donde se aplica seguridad (JWT, BCrypt, autorización por
+>    (HTTP/REST + JSON, **gRPC + Protobuf**, WebSocket, AMQP, JDBC) y el
+>    patrón (síncrono / asíncrono / pub-sub).
+> 4. La **doble interfaz** de `ms-busqueda` (REST en 8086 + gRPC en 9000)
+>    debe quedar visualmente representada como dos puertos
+>    proporcionados distintos sobre el mismo componente.
+> 5. Los puntos donde se aplica seguridad (JWT, BCrypt, autorización por
 >    rol, aislamiento de red).
 >
 > Genera el diagrama en **PlantUML** y también en **Mermaid** para que
