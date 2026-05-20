@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ms-busqueda
+  labels:
+    io.kompose.service: ms-busqueda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: ms-busqueda
+  template:
+    metadata:
+      labels:
+        io.kompose.service: ms-busqueda
+    spec:
+      containers:
+        - name: ms-busqueda
+          image: ms-busqueda
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8086
+          env:
+            - name: QUARKUS_HTTP_PORT
+              value: "8086"
+            - name: QUARKUS_REST_CLIENT_PRODUCTOS_INTERNO_URL
+              value: http://ms-productos:8081
+            - name: QUARKUS_REST_CLIENT_TIENDAS_INTERNO_URL
+              value: http://ms-tiendas:8082

@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ms-notificaciones
+  labels:
+    io.kompose.service: ms-notificaciones
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: ms-notificaciones
+  template:
+    metadata:
+      labels:
+        io.kompose.service: ms-notificaciones
+    spec:
+      containers:
+        - name: ms-notificaciones
+          image: ms-notificaciones
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8085
+          env:
+            - name: QUARKUS_HTTP_PORT
+              value: "8085"
+            - name: RABBITMQ_HOST
+              value: rabbitmq
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USERNAME
+              value: guest
+            - name: RABBITMQ_PASSWORD
+              value: guest

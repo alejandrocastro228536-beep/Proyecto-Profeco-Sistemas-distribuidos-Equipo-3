@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ms-usuarios
+  labels:
+    io.kompose.service: ms-usuarios
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: ms-usuarios
+  template:
+    metadata:
+      labels:
+        io.kompose.service: ms-usuarios
+    spec:
+      containers:
+        - name: ms-usuarios
+          image: ms-usuarios
+          # Never: usa la imagen que ya esta en el daemon local de Docker Desktop.
+          # Sin esto K8s intentaria 'docker pull' desde Docker Hub y fallaria.
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8083
+          env:
+            - name: QUARKUS_HTTP_PORT
+              value: "8083"
+            - name: QUARKUS_DATASOURCE_DB_KIND
+              value: postgresql
+            - name: QUARKUS_DATASOURCE_JDBC_URL
+              value: jdbc:postgresql://postgres:5432/usuariosdb
+            - name: QUARKUS_DATASOURCE_USERNAME
+              value: postgres
+            - name: QUARKUS_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: profeco-db
+                  key: password
+            - name: QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION
+              value: update

@@ -1,0 +1,18 @@
+# ConfigMap con el SQL de inicializacion.
+# Se monta en /docker-entrypoint-initdb.d/ del contenedor de Postgres,
+# que es el path que Postgres lee automaticamente en el primer arranque.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  labels:
+    io.kompose.service: postgres
+data:
+  postgres-init.sql: |
+    -- Inicializa las 4 bases que necesita cada microservicio.
+    -- Postgres ejecuta automaticamente cualquier .sql en /docker-entrypoint-initdb.d
+    -- la PRIMERA vez que se crea el volumen del contenedor.
+    CREATE DATABASE usuariosdb;
+    CREATE DATABASE tiendasdb;
+    CREATE DATABASE productosdb;
+    CREATE DATABASE reportesdb;

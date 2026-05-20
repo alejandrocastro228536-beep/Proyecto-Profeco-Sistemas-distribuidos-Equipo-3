@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    io.kompose.service: postgres
+spec:
+  replicas: 1
+  # Recreate: como hay un PVC, no podemos tener dos pods montandolo a la vez.
+  # K8s mata el viejo antes de crear el nuevo.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      io.kompose.service: postgres
+  template:
+    metadata:
+      labels:
+        io.kompose.service: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: profeco-db
+                  key: password
+          # livenessProbe: K8s lo mata y reinicia si esto falla.
+          # OJO: cada elemento del command es un argumento separado, no un string completo.
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 10
+            failureThreshold: 6
+          # readinessProbe: K8s no le manda trafico via Service hasta que esto pasa.
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 5
+            failureThreshold: 10
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-init
+              mountPath: /docker-entrypoint-initdb.d/postgres-init.sql
+              subPath: postgres-init.sql
+              readOnly: true
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data
+        - name: postgres-init
+          configMap:
+            name: postgres-init
+            items:
+              - key: postgres-init.sql
+                path: postgres-init.sql

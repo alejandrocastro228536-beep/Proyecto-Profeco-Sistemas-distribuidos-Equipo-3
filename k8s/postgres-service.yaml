@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    io.kompose.service: postgres
+spec:
+  # ClusterIP (default): solo accesible dentro del cluster.
+  # Los micros lo encuentran via DNS con el nombre 'postgres'.
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: 5432
+  selector:
+    io.kompose.service: postgres

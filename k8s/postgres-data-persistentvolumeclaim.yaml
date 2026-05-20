@@ -1,0 +1,14 @@
+# PVC: declaracion de "necesito un volumen persistente de 1Gi".
+# Docker Desktop tiene un provisioner por default (hostpath) que crea el PV automaticamente.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  labels:
+    io.kompose.service: postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  labels:
+    io.kompose.service: api-gateway
+spec:
+  # Lo dejamos en 1 por default. Para demostrar escalado:
+  # kubectl scale deployment api-gateway --replicas=3
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: api-gateway
+  template:
+    metadata:
+      labels:
+        io.kompose.service: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: api-gateway
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: QUARKUS_HTTP_PORT
+              value: "8080"
+            - name: QUARKUS_REST_CLIENT_PRODUCTOS_API_URL
+              value: http://ms-productos:8081
+            - name: QUARKUS_REST_CLIENT_TIENDAS_API_URL
+              value: http://ms-tiendas:8082
+            - name: QUARKUS_REST_CLIENT_USUARIOS_API_URL
+              value: http://ms-usuarios:8083
+            - name: QUARKUS_REST_CLIENT_REPORTES_API_URL
+              value: http://ms-reportes:8084
+            - name: QUARKUS_REST_CLIENT_BUSQUEDA_API_URL
+              value: http://ms-busqueda:8086
